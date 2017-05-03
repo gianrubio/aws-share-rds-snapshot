@@ -1,7 +1,0 @@
-language: go
-go:
-- 1.7.5
-before_install:
-- export PATH=$(pwd):$PATH
-script:
-- make push
