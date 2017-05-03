@@ -44,18 +44,18 @@ func init() {
 
 	flagset := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
 
-	flagset.StringVar(&awsShareSnapshot.SrcAccount.Region, "src-region", "", "AWS source region")
-	flagset.StringVar(&awsShareSnapshot.SrcAccount.AccessKeyId, "src-access-key-id", "", "AWS source access key id")
-	flagset.StringVar(&awsShareSnapshot.SrcAccount.SecretAccessKey, "src-secret-access-key", "", "AWS source secret key")
-	flagset.StringVar(&awsShareSnapshot.SrcAccount.AccountId, "src-account-id", "", "AWS source account id")
+	flagset.StringVar(&awsShareSnapshot.SrcAccount.Region, "src-region", os.Getenv("AWS_SRC_REGION"), "AWS source region")
+	flagset.StringVar(&awsShareSnapshot.SrcAccount.AccessKeyId, "src-access-key-id", os.Getenv("AWS_SRC_ACCESS_KEY_ID"), "AWS source access key id")
+	flagset.StringVar(&awsShareSnapshot.SrcAccount.SecretAccessKey, "src-secret-access-key", os.Getenv("AWS_SRC_SECRET_KEY"), "AWS source secret key")
+	flagset.StringVar(&awsShareSnapshot.SrcAccount.AccountId, "src-account-id", os.Getenv("AWS_SRC_ACCOUNT_ID"), "AWS source account id")
 
-	flagset.StringVar(&awsShareSnapshot.DestAccount.Region, "dest-region", "", "AWS destination region")
-	flagset.StringVar(&awsShareSnapshot.DestAccount.AccessKeyId, "dest-access-key-id", "", "AWS destination access key id")
-	flagset.StringVar(&awsShareSnapshot.DestAccount.SecretAccessKey, "dest-secret-access-key", "", "AWS destination access key")
-	flagset.StringVar(&awsShareSnapshot.DestAccount.AccountId, "dest-account-id", "", "AWS destination account id")
+	flagset.StringVar(&awsShareSnapshot.DestAccount.Region, "dest-region", os.Getenv("AWS_DEST_REGION"), "AWS destination region")
+	flagset.StringVar(&awsShareSnapshot.DestAccount.AccessKeyId, "dest-access-key-id", os.Getenv("AWS_DEST_ACCESS_KEY_ID"), "AWS destination access key id")
+	flagset.StringVar(&awsShareSnapshot.DestAccount.SecretAccessKey, "dest-secret-access-key", os.Getenv("AWS_DEST_SECRET_KEY"), "AWS destination access key")
+	flagset.StringVar(&awsShareSnapshot.DestAccount.AccountId, "dest-account-id", os.Getenv("AWS_DEST_SECRET_KEY"), "AWS destination account id")
 
-	flagset.Float64Var(&awsShareSnapshot.RetentionTime, "retention-time", 86400, "Time in seconds to mantain the snapshot/")
-	flagset.StringVar(&awsShareSnapshot.DBName, "db-name", "", "Database name")
+	flagset.Float64Var(&awsShareSnapshot.RetentionTime, "retention-time", 86400, "Time in seconds to maintain the snapshot")
+	flagset.StringVar(&awsShareSnapshot.DBName, "db-name", os.Getenv("DATABASE_NAME"), "Database name")
 
 	flagset.Parse(os.Args[1:])
 }
@@ -73,28 +73,28 @@ func Main() int {
 	err := awsShareSnapshot.TakeDBSnapshot()
 
 	if err != nil {
-		glog.Fatalf("Error taking snapshot %v", err)
+		glog.Fatalf("Error taking snapshot: %v", err)
 	}
 
 	if err := awsShareSnapshot.WaitSnapshotFinish(); err != nil {
-		glog.Fatalf("Error waiting snapshot %v", err)
+		glog.Fatalf("Error waiting for snapshot: %v", err)
 	}
 
 	if err := awsShareSnapshot.ShareSnapshot(); err != nil {
-		glog.Fatalf("Error sharing snapshot %v", err)
+		glog.Fatalf("Error sharing snapshot: %v", err)
 	}
 
 	if err := awsShareSnapshot.CopySnapshot(); err != nil {
-		glog.Fatalf("Error copying snapshot %v", err)
+		glog.Fatalf("Error copying snapshot: %v", err)
 	}
 
 	//delete snapsthot from origin
 	if err := awsShareSnapshot.DeleteSnapshot(awsShareSnapshot.SrcAccount.RDSConnection, awsShareSnapshot.dbSnapshotName()); err != nil {
-		glog.Fatalf("Error deleting snapshot %v", err)
+		glog.Fatalf("Error deleting snapshot: %v", err)
 	}
 
 	if err := awsShareSnapshot.SanitizeOldSnapshots(); err != nil {
-		glog.Fatalf("Error cleaning old snapshot %v", err)
+		glog.Fatalf("Error cleaning old snapshot: %v", err)
 	}
 
 	return 0
@@ -109,7 +109,7 @@ func (awsShareSnapshot *AwsShareSnapshot) HandleConnection() error {
 		Credentials: credentials.NewStaticCredentials(awsShareSnapshot.SrcAccount.AccessKeyId, awsShareSnapshot.SrcAccount.SecretAccessKey, "")})
 
 	if err != nil {
-		return fmt.Errorf("Failed to connect to src account. Err: %v", err)
+		return fmt.Errorf("Failed to connect to source account. Err: %v", err)
 	}
 	awsShareSnapshot.SrcAccount.RDSConnection = rds.New(awsShareSnapshot.SrcAccount.Session)
 
@@ -118,7 +118,7 @@ func (awsShareSnapshot *AwsShareSnapshot) HandleConnection() error {
 		Credentials: credentials.NewStaticCredentials(awsShareSnapshot.DestAccount.AccessKeyId, awsShareSnapshot.DestAccount.SecretAccessKey, "")})
 
 	if err != nil {
-		return fmt.Errorf("Failed to connect to destinaton account. Err: %v", err)
+		return fmt.Errorf("Failed to connect to destination account. Err: %v", err)
 	}
 
 	awsShareSnapshot.DestAccount.RDSConnection = rds.New(awsShareSnapshot.DestAccount.Session)
@@ -174,7 +174,7 @@ func (awsShareSnapshot *AwsShareSnapshot) WaitSnapshotFinish() error {
 				return nil
 			}
 		}
-		glog.Infof("Wait until snapshot is not yet ready ", awsShareSnapshot.dbSnapshotName())
+		glog.Infof("Snapshot %v not yet ready, waiting..", awsShareSnapshot.dbSnapshotName())
 
 		time.Sleep(time.Second * 10)
 
