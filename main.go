@@ -17,8 +17,8 @@ import (
 type AwsShareSnapshot struct {
 	SrcAccount    AwsAccount
 	DestAccount   AwsAccount
-	DBName        string
 	RetentionTime float64
+	DBName        string
 }
 
 type AwsAccount struct {
@@ -38,6 +38,7 @@ func (awsShareSnapshot *AwsShareSnapshot) dbSnapshotName() string {
 
 var (
 	awsShareSnapshot AwsShareSnapshot
+	dbName           string
 )
 
 func init() {
@@ -52,12 +53,13 @@ func init() {
 	flagset.StringVar(&awsShareSnapshot.DestAccount.Region, "dest-region", os.Getenv("AWS_DEST_REGION"), "AWS destination region")
 	flagset.StringVar(&awsShareSnapshot.DestAccount.AccessKeyID, "dest-access-key-id", os.Getenv("AWS_DEST_ACCESS_KEY_ID"), "AWS destination access key id")
 	flagset.StringVar(&awsShareSnapshot.DestAccount.SecretAccessKey, "dest-secret-access-key", os.Getenv("AWS_DEST_SECRET_KEY"), "AWS destination access key")
-	flagset.StringVar(&awsShareSnapshot.DestAccount.AccountID, "dest-account-id", os.Getenv("AWS_DEST_SECRET_KEY"), "AWS destination account id")
+	flagset.StringVar(&awsShareSnapshot.DestAccount.AccountID, "dest-account-id", os.Getenv("AWS_DEST_ACCOUNT_ID"), "AWS destination account id")
 
-	flagset.Float64Var(&awsShareSnapshot.RetentionTime, "retention-time", 0, "Time in seconds to maintain the snapshot")
+	flagset.Float64Var(&awsShareSnapshot.RetentionTime, "retention-time", 604800, "Time in seconds to maintain the snapshot")
 	flagset.StringVar(&awsShareSnapshot.DBName, "db-name", os.Getenv("DATABASE_NAME"), "Database name")
 
 	flagset.Parse(os.Args[1:])
+
 }
 
 func main() {
@@ -93,8 +95,9 @@ func Main() int {
 		glog.Fatalf("Error deleting snapshot: %v", err)
 	}
 
-	if err := awsShareSnapshot.SanitizeOldSnapshots(awsShareSnapshot.DBName); len(err) > 0 {
+	if err := awsShareSnapshot.SanitizeOldSnapshots(); len(err) > 0 {
 		glog.Fatalf("Error cleaning old snapshot: %v", err)
+
 	}
 
 	return 0
@@ -130,7 +133,7 @@ func (awsShareSnapshot *AwsShareSnapshot) TakeDBSnapshot() error {
 
 	_, err := awsShareSnapshot.SrcAccount.RDSConnection.CreateDBSnapshot(
 		&rds.CreateDBSnapshotInput{
-			DBInstanceIdentifier: &awsShareSnapshot.DBName,
+			DBInstanceIdentifier: aws.String(awsShareSnapshot.DBName),
 			DBSnapshotIdentifier: aws.String(awsShareSnapshot.dbSnapshotName()),
 		})
 
@@ -186,7 +189,8 @@ func (awsShareSnapshot *AwsShareSnapshot) WaitSnapshotFinish(conn *rds.RDS, dbSn
 }
 
 func (awsShareSnapshot *AwsShareSnapshot) CopySnapshot() error {
-	dbCopyName := fmt.Sprintf("arn:aws:rds:%v:%v:snapshot:%v", awsShareSnapshot.SrcAccount.Region, awsShareSnapshot.SrcAccount.AccountID, awsShareSnapshot.dbSnapshotName())
+	dbCopyName := fmt.Sprintf("arn:aws:rds:%v:%v:snapshot:%v", awsShareSnapshot.SrcAccount.Region,
+		awsShareSnapshot.SrcAccount.AccountID, awsShareSnapshot.dbSnapshotName())
 	dbSnapname := "cp-" + awsShareSnapshot.dbSnapshotName()
 
 	_, err := awsShareSnapshot.DestAccount.RDSConnection.CopyDBSnapshot(&rds.CopyDBSnapshotInput{SourceDBSnapshotIdentifier: aws.String(dbCopyName),
@@ -210,7 +214,7 @@ func (awsShareSnapshot *AwsShareSnapshot) DeleteSnapshot(conn *rds.RDS, dbSnapsh
 	return err
 }
 
-func (awsShareSnapshot *AwsShareSnapshot) SanitizeOldSnapshots(dbName string) []error {
+func (awsShareSnapshot *AwsShareSnapshot) SanitizeOldSnapshots() []error {
 
 	var errors []error
 
@@ -228,10 +232,12 @@ func (awsShareSnapshot *AwsShareSnapshot) SanitizeOldSnapshots(dbName string) []
 		for _, db := range dbSnapshotsOutput.DBSnapshots {
 			maxRetentionTime := time.Now().Local().Add(-time.Second * time.Duration(awsShareSnapshot.RetentionTime))
 
-			if *db.DBInstanceIdentifier == dbName && db.SnapshotCreateTime.Before(maxRetentionTime) {
+			x := maxRetentionTime.After(*db.SnapshotCreateTime)
+			if *db.DBInstanceIdentifier == awsShareSnapshot.DBName && x {
 				glog.Infof("Snapshot %v is too old, deleting..", *db.DBSnapshotIdentifier)
 
-				if err := awsShareSnapshot.DeleteSnapshot(awsShareSnapshot.DestAccount.RDSConnection, *db.DBSnapshotIdentifier); err != nil {
+				if err := awsShareSnapshot.DeleteSnapshot(awsShareSnapshot.DestAccount.RDSConnection,
+					*db.DBSnapshotIdentifier); err != nil {
 
 					errors = append(errors, err)
 				}
