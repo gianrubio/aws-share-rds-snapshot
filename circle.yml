@@ -1,0 +1,17 @@
+machine:
+  services:
+    - docker
+
+dependencies:
+  pre:
+    - docker info
+test:
+  override:
+    - make build
+
+deployment:
+  hub_branch:
+    branch: master
+    commands:
+      - docker login -u $DOCKER_HUB_LOGIN -p $DOCKER_HUB_PASSWORD -e $DOCKER_HUB_EMAIL
+      - make push

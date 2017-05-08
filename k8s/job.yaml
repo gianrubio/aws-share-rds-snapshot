@@ -1,0 +1,54 @@
+apiVersion: batch/v2alpha1
+kind: CronJob
+metadata:
+  labels:
+    app: aws-share-rds-snapshot
+  name: aws-share-rds-snapshot
+spec:
+  concurrencyPolicy: Replace
+  schedule: '3 * * * *'
+  suspend: false
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: aws-share-rds-snapshot
+          name: aws-share-rds-snapshot
+        spec:
+          restartPolicy: Never
+          containers:
+          - name: aws-share-rds-snapshot
+            args:
+            - --retention-time=604800
+            - --db-name=prod,preprod
+            image: gianrubio/aws-share-rds-snapshot:0.1
+            env:
+            - name: AWS_SRC_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-share-rds-snapshot
+                  key: AWS_SRC_ACCESS_KEY_ID
+            - name: AWS_SRC_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-share-rds-snapshot
+                  key: AWS_SRC_SECRET_KEY
+            - name: AWS_DEST_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: aws-share-rds-snapshot
+                  key: AWS_DEST_ACCESS_KEY_ID
+            - name: AWS_DEST_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: aws-share-rds-snapshot
+                  key: AWS_DEST_SECRET_KEY
+            - name: AWS_SRC_REGION
+              value: "eu-west-1"
+            - name: AWS_SRC_ACCOUNT_ID
+              value: "12345"
+            - name: AWS_DEST_REGION
+              value: "eu-west-1"
+            - name: AWS_DEST_ACCOUNT_ID
+              value: "123456"
